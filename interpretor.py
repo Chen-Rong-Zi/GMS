@@ -3,153 +3,96 @@
 this is a template file
 """
 
+import sys
 import readline
 
-from typing   import Iterable
-from tokenize import TokenInfo
-from tokenize import NUMBER, OP, NEWLINE, ENDMARKER, PLUS, MINUS, STAR, SLASH, TokenInfo
-from tokenize import LBRACE, RBRACE, LPAR, RPAR
-from operator import add, sub, mul, truediv
+from   typing             import Iterable
+from   tokenize           import TokenInfo
+from   tokenize           import NUMBER,       OP,          NEWLINE,   ENDMARKER, PLUS, MINUS, STAR, SLASH, TokenInfo
+from   tokenize           import LBRACE,       RBRACE,      LPAR,      RPAR
+from   tokenize           import NAME, EQUAL, SEMI
 
-from returns.result     import safe,   Success, Failure, Result
-from returns.maybe      import Nothing, Some
-from returns.converters import flatten
-from returns.pipeline   import is_successful
+from   returns.result     import safe,         Success,     Failure,   Result
+from   returns.maybe      import Nothing,      Some
+# from   returns.converters import flatten
+from   returns.pipeline   import is_successful
 
-from .scanner import Scanner
+from   .scanner           import Scanner
+from   .ast               import BinOp,        Num, UnaryOp, Assign, Variable, Compound, Empty, PrintStat
+from   .evaluater         import NodeVisitor,  LispVisitor, RPNVisitor, PrettyPrinter
 
 
-class Evaluater:
-    Literal  = [NUMBER]
-    Operator = [OP, PLUS, MINUS, STAR, SLASH]
-    EOF      = [NEWLINE, ENDMARKER]
-    ExtentedOP = [LPAR, RPAR, OP, PLUS, MINUS, STAR, SLASH]
-    BasicOperation = {
-        PLUS  : add,
-        MINUS : sub,
-        STAR  : mul,
-        SLASH : truediv
-    }
-    OPPriority = {
-        PLUS: 0,
-        MINUS: 0,
-        STAR: 1,
-        SLASH: 1,
-    }
+class Parser:
+    Literal    = [NUMBER]
+    UnaryOp    = [PLUS, MINUS]
+    Operator   = [OP,      PLUS,      MINUS, STAR, SLASH]
+    EOF        = [NEWLINE, ENDMARKER, 4]
+    ExtentedOP = [LPAR,    RPAR,      OP,    PLUS, MINUS, STAR, SLASH]
+    Keyword = ['print']
+
 
     def __init__(self, expr_str):
         self.tokens = Scanner.scan_from_str(expr_str)
-        self.operator_stack = []
-        self.operand_stack = []
-        self.rpn = []
-        self.encoding = next(self.tokens)
+        self.encoding   = next(self.tokens)
         self.curr_token = next(self.tokens)
+        self.frame_stack = []
+        self.GLOBAL_SCOPE = {}
+        """
+        assignment: variable = expr SEMI
+        compound statement: LBRACE statement list RBRACE
 
-    def _priority(self, op, instack):
-        match op:
-            case lbrace if op.exact_type == LPAR:
-                if instack:
-                    return -1
-                else:
-                    return 4
-            case op if op.exact_type in Evaluater.OPPriority:
-                return Evaluater.OPPriority[op.exact_type]
+        statement: empty 
+                    | assignment statement 
+                    | compound statement
+                    | print expr
 
-    def _push_op(self, op):
-        match op:
-            case rbrace if rbrace.string == ')':
-                while self.operator_stack and self.operator_stack[-1].exact_type != LPAR:
-                    self.rpn.append(self.operator_stack.pop())
-                match self.operator_stack:
-                    case [*_, lbrace] if lbrace.exact_type == LPAR:
-                        self.operator_stack.pop()
-                        return Success(())
-                    case _:
-                        return Failure(f'invalid bracket at line: {op.start[0]} col: ({op.start[0]}, {op.end[1]})')
-            case op:
-                # breakpoint()
-                # if op.exact_type == LPAR:
-                    # breakpoint()
-                while self.operator_stack and self._priority(self.operator_stack[-1], True) >= self._priority(op, False):
-                    higer_op = self.operator_stack.pop()
-                    if higer_op.exact_type != LPAR:
-                        self.rpn.append(higer_op)
-                self.operator_stack.append(op)
-                return Success(())
+        statement list: statement 
+                    | statement statement list
 
-    @safe
-    def binary_calc(op, operand1, operand2):
-        return Evaluater.BasicOperation[op.exact_type](operand1, operand2)
-
-    @safe
-    def take(token):
-        return eval(token.string)
-
-    def read_operator(self):
-        if self.rpn == []:
-            return Failure('invalid expression expect an operator')
-        match self.rpn[-1]:
-            case op if op.exact_type in Evaluater.Operator:
-                return Success(self.rpn.pop())
-            case op if op.exact_type in Evaluater.Literal:
-                return Evaluater.take(self.rpn.pop())
-
-    def read_operand(self):
-        if self.rpn == []:
-            return Failure('invalid expression expect an operand')
-        first = self.rpn[-1]
-        match first.exact_type:
-            case y if y in Evaluater.Operator:
-                return self.eval_rpn()
-            case x if x in Evaluater.Literal:
-                return Evaluater.take(self.rpn.pop())
-            case operand:
-                return Failure(f'unimplemented operand type {first}')
-
-    def eval_rpn(self):
-        match self.read_operator():
-            case Success(x) if type(x) in [int]:
-                return Success(x)
-            case Success(op):
-                return flatten(Result.do(
-                    self.binary_calc(op, rand1, rand2)
-                    for rand1 in self.read_operand()
-                    for rand2 in self.read_operand()
-                ))
-            case failure:
-                return failure
-
-    def evaluate(self):
-        for token in self.tokens:
-            match token:
-                case num if num.type in Evaluater.Literal:
-                    self.rpn.append(num)
-                case op if op.type in Evaluater.ExtentedOP:
-                    result = self._push_op(op)
-                    if not is_successful(result):
-                        return result
-                case eof if eof.type in Evaluater.EOF:
-                    break
-                case unimplemented:
-                    return Failure(f'unimplemented token {unimplemented}')
-
-        while self.operator_stack:
-            self.rpn.append(self.operator_stack.pop())
-
-        return self.eval_rpn()\
-            .bind(lambda x : Success(x) if len(self.rpn) == 0 else Failure(f'invalid expression {self.rpn[-1].string} at line: {self.rpn[-1].start[0]} col: {self.rpn[-1].start[1], self.rpn[-1].end[1]}'))
+        expr: term   ((PLUS|MINUS) term)*
+        term: factor ([MUL DIV] factor)*
+        factor: variable
+            | (+ | - | *) factor
+            | int
+            | lpaten expr rparen
+        """
+        self.read_term = self.rule(self.read_factor, [STAR, SLASH])
+        self.read_expr = self.rule(self.read_term,   [PLUS, MINUS])
 
     def advance(self):
         self.curr_token = next(self.tokens)
         return self.curr_token
 
+    def read_specific(self, types):
+        match self.curr_token:
+            case token if token.exact_type in types:
+                self.advance()
+                return Success(token)
+            case error:
+                return Failure(f"expect {types} at line: {error.start[0]} col: {error.start[1], error.end[1]} but got {self.curr_token.exact_type}")
+
     def read_factor(self):
         match self.curr_token:
-            case tk if tk.type in Evaluater.Literal:
+            case tk if tk.type in Parser.Literal:
                 self.advance()
-                return Success(int(tk.string))
+                return Success(Num(tk))
+            case tk if tk.exact_type == LPAR:
+                self.advance()
+                expr = self.read_expr()
+                if self.curr_token.exact_type != RPAR:
+                    return Failure("unmatched parentheses at line: {x.start[0]} col: {x.start[1], x.end[1]}")
+                self.advance()
+                return expr
+            case tk if tk.exact_type in Parser.UnaryOp:
+                self.advance()
+                return self.read_factor().map(lambda expr : UnaryOp(tk, expr))
+            case var if var.exact_type == NAME:
+                self.advance()
+                if var.string in Parser.Keyword:
+                    return Failure(f'invalid name {var.string} at line: {var.start[0]} col: {var.start[1], var.end[1]}, it is a keyword')
+                return Success(Variable(var))
             case error_token:
-                return Failure(f'invalid expression {error_token.string} at line: {error_token.start[0]} col: {error_token.start[1], error_token.start[1]}')
+                return Failure(f'Unkown Factor Token {error_token.string} at line: {error_token.start[0]} col: {error_token.start[1], error_token.end[1]}')
 
     def rule(self, read_next, op_type):
         def defination():
@@ -158,35 +101,112 @@ class Evaluater:
                 match self.curr_token:
                     case op if op.exact_type in op_type:
                         self.advance()
-                        factor = flatten(Result.do(
-                            self.binary_calc(op, x, y)
+                        factor = Result.do(
+                            BinOp(x, op, y)
                             for x in factor
                             for y in read_next()
-                        ))
-                    case end:
+                        )
+                    case op:
                         return factor
         return defination
 
-    def read_term(self):
-        return self.rule(lambda : self.read_factor(), [STAR, SLASH])()
+    def read_assignment(self):
+        return Result.do(
+            Assign(Variable(lvalue), equal_sign, rvalue)
+            for lvalue     in self.read_factor()
+            for equal_sign in self.read_specific([EQUAL])
+            for rvalue     in self.read_expr()
+            for semicolumn in self.read_specific([SEMI])
+        )
 
+    def read_print_statement(self):
+        self.advance()
+        return Result.do(
+            PrintStat(expr)
+            for expr in self.read_expr()
+            for semi in self.read_specific([SEMI])
+        )
 
-    def expr(self):
-        return self.rule(lambda : self.read_term(), [PLUS, MINUS])()
+    def read_statement(self):
+        match self.curr_token:
+            case op if op.string == 'print':
+                return self.read_print_statement()
+            case op if op.exact_type == NAME:
+                return self.read_assignment()
+            case op if op.exact_type == LBRACE:
+                return self.read_compound()
+            case other:
+                return Success(Empty())
+
+    def read_statement_list(self):
+        statement_list = []
+        while True:
+            match self.read_statement():
+                case Success(Empty()):
+                    return Success(Compound(statement_list))
+                case Success(statement):
+                    statement_list.append(statement)
+                case failure:
+                    return failure
+
+    def read_compound(self):
+        return Result.do(
+            statement_list
+            for left  in self.read_specific([LBRACE])
+            for statement_list in self.read_statement_list()
+            for right in self.read_specific([RBRACE])
+        )
+
+    def parse_expr(self):
+        return self.read_expr()\
+            .bind(lambda result : Success(result)
+                if self.curr_token.exact_type in Parser.EOF
+                else Failure(f'Expect Eof Token {self.curr_token.string} at line: {self.curr_token.start[0]} col: {self.curr_token.start[1], self.curr_token.end[1]}'))
+
+    def parse(self):
+        return self.read_compound()\
+            .bind(lambda result : Success(result)
+                    if self.curr_token.exact_type in Parser.EOF
+                    else Failure(f'Expect EOF token {self.curr_token.string} at line: {self.curr_token.start[0]} col: {self.curr_token.start[1], self.curr_token.end[1]}'))
 
 class Interpretor:
     def interact():
         while True:
             try:
                 input_expr = input('GMS> ')
+                print(Interpretor.evaluate(input_expr)._inner_value)
+                print(Interpretor.Lisp_evaluate(input_expr)._inner_value)
+                print(Interpretor.RPNVisitor(input_expr)._inner_value)
                 # breakpoint()
-                print(Evaluater(input_expr).expr()._inner_value)
-                # print(Evaluater('1 + 1 - 201 * 10').evaluate().__inner_value)
-            except ZeroDivisionError as e:
-                print(e)
-            # except:
-                # print('exit')
-                # return
+                print(Interpretor.interpret(input_expr)._inner_value)
+            except EOFError:
+                print('exit')
+                break
+
+    def evaluate(input_expr):
+        # breakpoint()
+        return Parser(input_expr).parse_expr()\
+            .bind(NodeVisitor().visit)
+
+    def Lisp_evaluate(input_expr):
+        return Parser(input_expr).parse_expr()\
+            .map(LispVisitor().visit)
+
+    def RPNVisitor(input_expr):
+        return Parser(input_expr).parse_expr()\
+            .map(RPNVisitor().visit)
+
+    def interpret(buffer):
+        return Parser(buffer).parse()\
+            .map(PrettyPrinter().visit)
+
+
 
 if __name__ == '__main__':
-    Interpretor.interact()
+    if sys.stdin.isatty():
+        Interpretor.interact()
+    else:
+        Interpretor.interpret(sys.stdin.read())\
+            .map(print)\
+            .lash(print)
+

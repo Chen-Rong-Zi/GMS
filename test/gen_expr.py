@@ -6,7 +6,7 @@ import sys
 import subprocess
 import time
 
-from random     import randint
+from random import randint, choice
 
 def gen_num(n):
     return randint(0, n - 1)
@@ -22,22 +22,32 @@ def gen_oper():
         case 3:
             return '/'
 
-def gen_expr(depth=1):
+def gen_expr(type=0, depth=1):
+    """
+    type=0: primitive int
+    type=1: expression with operator
+    type=2: expression with parentheses
+    type=3: expression with unary
+    """
     if depth > 100:
         return 1
-    match randint(0, 1):
+    match randint(0, 3):
         case 0:
             expr = str(randint(0, 9))
         case 1:
             expr = ''
-            expr += str(gen_expr(depth + 1))
+            expr += str(gen_expr(type, depth + 1))
             expr += gen_oper()
-            expr += str(gen_expr(depth + 1))
+            expr += str(gen_expr(type, depth + 1))
         case 2:
             expr = ''
             expr += '('
-            expr += str(gen_expr(depth + 1))
+            expr += str(gen_expr(type, depth + 1))
             expr += ')'
+        case 3:
+            expr = ''
+            expr += choice(['+', '-'])
+            expr += str(gen_expr(type, depth + 1))
     return expr
 
 def cpp_eval(expr):
@@ -47,32 +57,18 @@ def cpp_eval(expr):
         raise ZeroDivisionError
     return stdout
 
-def main():
-    sum = 0
-    count = int(sys.argv[1])
-    while True:
-        if sum >= count:
-            break
-        try:
-            expression = gen_expr()
-            print(expression, eval(expression), sep='\t')
-            sum += 1
-        except:
-            pass
-        # try:
-            # expr    = gen_expr()
-            # py_ans  = myeval(expr)
-            # cpp_ans = cpp_eval(expr)
-            # print(expr, py_ans, cpp_ans)
-            # if py_ans <= 2 ** 31 - 1 and py_ans >= 1:
-                # assert py_ans == int(cpp_ans)
-                # time.sleep(1)
-        # except (ZeroDivisionError, ValueError) as e:
-            # continue
-        # except KeyboardInterrupt:
-            # print('exit')
+# def main():
+    # sum = 0
+    # count = int(sys.argv[1])
+    # while True:
+        # if sum >= count:
             # break
+        # try:
+            # expression = gen_expr()
+            # print(expression, eval(expression), sep='\t')
+            # sum += 1
+        # except:
+            # pass
 
-if __name__ == '__main__':
-    main()
-
+# if __name__ == '__main__':
+    # main()
