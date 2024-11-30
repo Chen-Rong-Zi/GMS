@@ -10,11 +10,12 @@ from .gen_expr import gen_expr
 
 def make_test(type):
     def test():
+        interpretor = Interpretor()
         for i in range(100):
             try:
                 expression = gen_expr(type)
                 print(expression)
-                assert eval(expression) == Interpretor.evaluate(expression)._inner_value
+                assert eval(expression) == interpretor.evaluate(expression)._inner_value
             except ZeroDivisionError:
                 pass
             # except AssertionError:

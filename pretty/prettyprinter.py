@@ -1,4 +1,4 @@
-from .evaluater import Evaluater
+from ..nodevisitor import Evaluater
 
 class PrettyPrinter(Evaluater):
     Indent = '    '
@@ -45,3 +45,10 @@ class PrettyPrinter(Evaluater):
         indent = PrettyPrinter.Indent * self.level
         return indent + f'print {self.visit(node.expr)}' + ';\n'
 
+    def visit_Declaration(self, node):
+        string = PrettyPrinter.Indent * self.level
+        return string + str(node)
+
+    def visit_Type(self, node):
+        string = PrettyPrinter.Indent * self.level
+        return string + str(node)

@@ -9,9 +9,10 @@ from returns.result     import safe,   Success, Failure, Result
 from returns.maybe      import Nothing, Some
 from returns.converters import flatten
 from returns.pipeline   import is_successful
+from returns.iterables  import Fold
 
 
-class Evaluater:
+class NodeVisitor:
     BasicOperation = {
         PLUS  : add,
         MINUS : sub,
@@ -25,7 +26,7 @@ class Evaluater:
 
     @safe
     def binary_calc(op, operand1, operand2):
-        return Evaluater.BasicOperation[op.exact_type](operand1, operand2)
+        return NodeVisitor.BasicOperation[op.exact_type](operand1, operand2)
 
     def visit(self, node):
         """
@@ -40,44 +41,68 @@ class Evaluater:
     def generic_visit(self, node):
         raise Exception(f'Not Implemented Operand Type: {type(node).__name__}')
 
-class NodeVisitor(Evaluater):
+class Evaluater(NodeVisitor):
+    def __init__(self):
+        self.frame_stack = []
+        self.GLOBAL_SCOPE = {}
+
     def visit_Num(self, node):
-        return Evaluater.take(node)
+        return NodeVisitor.take(node)
 
     def visit_BinOp(self, node):
         return Result.do(
             result
             for operand1 in self.visit(node.left)
             for operand2 in self.visit(node.right)
-            for result   in Evaluater.binary_calc(node.op, operand1, operand2)
+            for result   in NodeVisitor.binary_calc(node.op, operand1, operand2)
         )
 
     def visit_UnaryOp(self, node):
         return Result.do(
             result
             for operand in self.visit(node.expr)
-            for result  in Evaluater.binary_calc(node.op, 0, operand)
+            for result  in NodeVisitor.binary_calc(node.op, 0, operand)
         )
 
     def visit_Empty(self, node):
         return Success(str(node))
 
     def visit_Compound(self, node):
-        return Success(str(node))
+        match Fold.collect(map(self.visit, node.children), Success(())):
+            case Success(_):
+                return Success(self.GLOBAL_SCOPE)
+            case failure:
+                return failure
 
     def visit_Assign(self, node):
-        return Success(str(node))
+        match self.visit(node.rvalue):
+            case Success(x):
+                self.GLOBAL_SCOPE[str(node.lvalue)] = x
+                return Success(x)
+            case failure:
+                return failure
 
     def visit_Variable(self, node):
+        if str(node) in self.GLOBAL_SCOPE:
+            return Success(self.GLOBAL_SCOPE[str(node)])
+        return Failure(f'no such variable {str(node)}')
+
+
+    def visit_PrintStat(self, node):
+        return self.visit(node.expr)\
+            .map(print)
+
+    def visit_Declaration(self, node):
         return Success(str(node))
 
-
+    def visit_Type(self, node):
+        return Success(str(node))
 
 
 
 ######### just for fun ############
 
-class RPNVisitor(Evaluater):
+class RPNVisitor(NodeVisitor):
     def visit_Num(self, node):
         return str(node)
 
@@ -87,7 +112,7 @@ class RPNVisitor(Evaluater):
     def visit_UnaryOp(self, node):
         return str(node)
 
-class LispVisitor(Evaluater):
+class LispVisitor(NodeVisitor):
     def visit_Num(self, node):
         return str(node)
 

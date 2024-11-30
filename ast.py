@@ -2,6 +2,7 @@
 """
 this is a template file
 """
+from functools import reduce
 
 class AST:
     pass
@@ -70,3 +71,18 @@ class PrintStat(AST):
 
     def __str__(self):
         return str(expr)
+
+class Declaration(AST):
+    def __init__(self, _type, name):
+        self._type = _type
+        self.name = name
+
+    def __str__(self):
+        return f'{str(self._type)} {self.name.string};\n'
+
+class Type(AST):
+    def __init__(self, _type):
+        self._type = _type
+
+    def __str__(self):
+        return self._type.string
