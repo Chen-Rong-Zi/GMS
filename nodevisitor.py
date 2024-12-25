@@ -11,6 +11,10 @@ from returns.converters import flatten
 from returns.pipeline   import is_successful
 from returns.iterables  import Fold
 
+from .ast    import Num, BinOp, UnaryOp, Empty, Compound, Assign, Variable, PrintStat, Declaration, Type
+from .symbol import SymbolTable, VarSymbol
+
+
 
 class NodeVisitor:
     BasicOperation = {
@@ -31,8 +35,7 @@ class NodeVisitor:
     def visit(self, node):
         """
         reload visit functions
-        visit(node: BinOp) -> Result
-        visit(node: Num) -> Result
+        visit(node: AstNode) -> Result
         """
         name = type(node).__name__
         visit_method = getattr(self, 'visit_' + name, self.generic_visit)
@@ -87,7 +90,6 @@ class Evaluater(NodeVisitor):
             return Success(self.GLOBAL_SCOPE[str(node)])
         return Failure(f'no such variable {str(node)}')
 
-
     def visit_PrintStat(self, node):
         return self.visit(node.expr)\
             .map(print)
@@ -99,6 +101,56 @@ class Evaluater(NodeVisitor):
         return Success(str(node))
 
 
+class Checker(NodeVisitor):
+    def __init__(self):
+        self.symtab = SymbolTable()
+
+    def visit_Num(self, node):
+        return Success(node)
+
+    def visit_BinOp(self, node):
+        return Result.do(
+            BinOp(left, node.op, right)
+            for left in self.visit(node.left)
+            for right in self.visit(node.right)
+        )
+
+    def visit_UnaryOp(self, node):
+        return self.visit(node.expr)
+
+    def visit_Empty(self, node):
+        return Success(())
+
+    def visit_Compound(self, node):
+        return Result.do(
+            Compound(list(children))
+            for children in Fold.collect(map(self.visit, node.children), Success(()))
+        )
+
+    def visit_Assign(self, node):
+        return Result.do(
+            Assign(node.lvalue, node.op, node.rvalue)
+            for lvalue in self.visit(node.lvalue)
+            for rvalue in self.visit(node.rvalue)
+        )
+
+    def visit_Variable(self, node):
+        return self.symtab.lookup(node.name)\
+            .map(lambda _ : node)
+
+    def visit_PrintStat(self, node):
+        return Result.do(
+            PrintStat(expr)
+            for expr in self.visit(node.expr)
+        )
+
+    def visit_Declaration(self, node):
+        return self.symtab.lookup(node._type.name)\
+            .bind(lambda x : self.symtab.define(VarSymbol(node.name, x)))\
+            .map(lambda _ : node)
+
+    def visit_Type(self, node):
+        return Success(node)
 
 ######### just for fun ############
 

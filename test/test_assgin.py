@@ -5,7 +5,7 @@ this is a template file
 import sys
 sys.path.append('../..')
 
-from GMS.interpretor import Interpretor
+from GMS.interpretor import GMS
 from .gen_expr import gen_expr
 
 
@@ -34,5 +34,5 @@ def test_basic():
             'e':  e,
             '_e':  _e
         }
-        for (key, value) in Interpretor.interpret(code)._inner_value.items():
+        for (key, value) in GMS.interpret(code)._inner_value.items():
             assert value == answer[key]

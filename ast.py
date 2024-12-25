@@ -47,6 +47,7 @@ class Compound(AST):
         string = '{'
         string += ''.join(str(statement) for statement in self.children)
         string += '}'
+        return string
 
 class Assign(AST):
     def __init__(self, lvalue, op, rvalue):
@@ -59,8 +60,9 @@ class Assign(AST):
 
 class Variable(AST):
     def __init__(self, token):
-        self.token = token
+        self.token  = token
         self.string = self.token.string
+        self.name   = self.token.string
 
     def __str__(self):
         return self.token.string
@@ -70,19 +72,21 @@ class PrintStat(AST):
         self.expr = expr
 
     def __str__(self):
-        return str(expr)
+        return f'print {str(self.expr)}'
 
 class Declaration(AST):
-    def __init__(self, _type, name):
+    def __init__(self, _type, token):
         self._type = _type
-        self.name = name
+        self.token = token
+        self.name = self.token.string
 
     def __str__(self):
-        return f'{str(self._type)} {self.name.string};\n'
+        return f'{str(self._type)} {self.name};\n'
 
 class Type(AST):
     def __init__(self, _type):
         self._type = _type
+        self.name = self._type.string
 
     def __str__(self):
         return self._type.string

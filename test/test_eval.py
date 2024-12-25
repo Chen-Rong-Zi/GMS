@@ -5,17 +5,16 @@ this is a template file
 import sys
 sys.path.append('../..')
 
-from GMS.interpretor import Interpretor
+from GMS.interpretor import GMS
 from .gen_expr import gen_expr
 
 def make_test(type):
     def test():
-        interpretor = Interpretor()
+        interpretor = GMS()
         for i in range(100):
             try:
                 expression = gen_expr(type)
-                print(expression)
-                assert eval(expression) == interpretor.evaluate(expression)._inner_value
+                assert eval(expression) == GMS.evaluate(expression)._inner_value
             except ZeroDivisionError:
                 pass
             # except AssertionError:
