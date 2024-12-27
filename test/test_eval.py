@@ -11,14 +11,16 @@ from .gen_expr import gen_expr
 def make_test(type):
     def test():
         interpretor = GMS()
+        # count = 0
         for i in range(100):
             try:
                 expression = gen_expr(type)
                 assert eval(expression) == GMS.evaluate(expression)._inner_value
+                # print(f'\rpass {count} tests', end='')
             except ZeroDivisionError:
                 pass
-            # except AssertionError:
-                # print(expression)
+            # count += 1
+        print()
     return test
 
 def test_basic():

@@ -78,7 +78,7 @@ class Declaration(AST):
     def __init__(self, _type, token):
         self._type = _type
         self.token = token
-        self.name = self.token.string
+        self.name  = self.token.string
 
     def __str__(self):
         return f'{str(self._type)} {self.name};\n'
@@ -86,7 +86,7 @@ class Declaration(AST):
 class Type(AST):
     def __init__(self, _type):
         self._type = _type
-        self.name = self._type.string
+        self.name  = self._type.string
 
     def __str__(self):
         return self._type.string

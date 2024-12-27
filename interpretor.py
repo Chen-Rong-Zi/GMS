@@ -71,7 +71,7 @@ class GMS:
                     .alt(print)
 
             except KeyboardInterrupt:
-                print('\nKeyboardInterrupt')
+                print('\nKeyboardInterrupt, press CTRL-D to exit')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='GMS: an interpretor')
@@ -84,6 +84,7 @@ if __name__ == '__main__':
     elif args.filepath:
         GMS.interpret(args.filepath, is_file=True)
     else:
+        print('third')
         gms = GMS()
         gms.interact()
 
