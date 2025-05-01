@@ -1,0 +1,1 @@
+{print   1/-(N)-+Sd/c+E*Az;}

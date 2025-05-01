@@ -1,0 +1,1 @@
+O=(((01159+-+O_9gSO/(56)+(NX/v)*(K)-W1mqq+_U--Z/-4/(R)-P/(E-4*80*Jg*v68Kza*H-83))*(l-9/(Di+zG)*---598/sWE/cW7on/(w/6/_/3-77)+zj*-N+2*DG5oO*-d*(aO1+CJz))+x)*r0*(++-r));print 8*az/((+tns)*5961)+t+l*5+4;

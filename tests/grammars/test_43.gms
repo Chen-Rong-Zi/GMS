@@ -1,0 +1,1 @@
+Num AZWd;print  ++1-s;tk_=5/6*d/(((jj*6*(6*iwZI+wnVP))*g/7+x))/-(92)-Zb9;

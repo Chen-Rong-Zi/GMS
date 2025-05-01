@@ -1,0 +1,1 @@
+{Num  Ls;{{print  (1+k);{Num    P,oi;}}print 48*+tx*16;}}R=+26*9;Num yk;

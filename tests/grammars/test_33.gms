@@ -1,0 +1,1 @@
+Num  Yd;Num Sw;Num     Sb,i;print    --+7-BgE/2;
