@@ -3,10 +3,12 @@
 this is a template file
 """
 
-from returns.result   import safe
-from returns.pipeline import flow
-from tokenize         import tokenize, INDENT, NL, NEWLINE, DEDENT
-from io               import BytesIO
+from returns.result    import safe
+from returns.pipeline  import flow
+from returns.pointfree import bind,     map_
+from tokenize          import tokenize, INDENT, NL, NEWLINE, DEDENT
+from tokenize          import TokenError
+from io                import BytesIO
 
 
 class Scanner:

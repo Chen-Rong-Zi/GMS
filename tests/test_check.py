@@ -38,12 +38,8 @@ def test_check_assign() -> Never:
 def test_check_double_declaration():
     code = """\
         Num a;
-        {
-            Str a;
-            {
-                Bool a;
-            }
-        }
+        Str a;
+        Bool a;
     """
     gms = GMS(StrScanner(code))
 

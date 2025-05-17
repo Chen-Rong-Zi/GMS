@@ -14,8 +14,8 @@ from returns.converters import flatten
 from returns.pipeline   import is_successful
 from returns.iterables  import Fold
 
-from node.ast    import Num, BinOp, UnaryOp, Empty, Compound, Assign, Variable, PrintStat, VarDeclaration, Type, FuncDeclaration
-from node.symbol import ScopedSymbolTable, VarSymbol
+from node.ast import Num, BinOp, UnaryOp, Empty, Compound, Assign, Variable, PrintStat, VarDeclaration, Type, FuncDeclaration
+from node     import ScopedSymbolTable, VarSymbol
 
 from util import debugFunc
 
@@ -41,13 +41,14 @@ class NodeVisitor:
             case TokenInfo(type=tokenize.NAME, string='True' | 'False' as string):
                 return eval(string)
             case TokenInfo(type=tokenize.STRING, string=string):
-                return string
+                return eval(string)
             case t:
                 raise Exception(f"unkown factor token {t}")
 
     @safe
     def binary_calc(op, operand1, operand2):
-        return NodeVisitor.BasicOperation[op.exact_type](operand1, operand2)
+        operator = NodeVisitor.BasicOperation[op.exact_type]
+        return operator(operand1, operand2)
 
     def visit(self, node):
         """
@@ -60,7 +61,13 @@ class NodeVisitor:
         return visit_method(node)
 
     def generic_visit(self, node):
-        raise Exception(f'Not Implemented Operand Type: {type(node).__name__}')
+        raise Exception(f'Not Implemented Operand Type: {type(node).__name__} {node}')
+
+    def visit_list(self, node):
+        return Fold.collect(map(self.visit, node), Success([]))
+
+    def visit_tuple(self, node):
+        return Fold.collect(map(self.visit, node), Success([]))
 
 ######### just for fun ############
 

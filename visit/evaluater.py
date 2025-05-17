@@ -1,12 +1,16 @@
 from dataclasses  import dataclass
 from typing       import Any
 from returns.trampolines import trampoline, Trampoline
+from tokenize     import TokenInfo
 
 from .nodevisitor import NodeVisitor
 from .nodevisitor import *
-from util         import log, debugFunc
+from util         import log, debugFunc, validate
 from frame        import CallStack, ActivationRecord, ARType
-from objprint     import objprint as print
+from error        import *
+from heap         import *
+from node.ast     import *
+from node.symbol  import *
 
 
 @dataclass
@@ -21,11 +25,13 @@ class Evaluater(NodeVisitor):
     def __init__(self):
         self.call_stack = CallStack()
 
-        ar = ActivationRecord('global_frame', ARType.GLOBAL_FRAME, 1)
+        ar = ActivationRecord('global_frame', ARType.GLOBAL_FRAME, None)
         self.call_stack.push(ar)
 
         log(str(self.call_stack))
 
+    def error(self, error_code, token, msg):
+        return Failure(RuntimeError(error_code=error_code, token=token, message=msg))
 
     def visit_Num(self, node):
         return NodeVisitor.take(node.token)
@@ -33,6 +39,7 @@ class Evaluater(NodeVisitor):
     def visit_Bool(self, node):
         return NodeVisitor.take(node.token)
 
+    # @debugFunc
     def visit_Str(self, node):
         return NodeVisitor.take(node.token)
 
@@ -54,16 +61,36 @@ class Evaluater(NodeVisitor):
 
     # @debugFunc
     def visit_Variable(self, node):
-        return self.call_stack.peek().map(lambda f : f.get(node.name))
+        ret = self.call_stack.peek().bind(lambda f : f.getrval(node.name))
+        if not is_successful(ret):
+            return ret
+        value = ret.unwrap()
+        if value is None:
+            return self.error(ErrorCode.UNINITIALZIED_ID, node.token, f'{node.name} is uninitialzied')
+        match value:
+            case HeapUnit(value=value):
+                return Success(value)
+            case other:
+                return Success(other)
+
+    def visit_VariableFrame(self, node):
+        return self.call_stack.peek().bind(lambda f : f.getlval(node.name))
 
     def visit_Empty(self, node):
         return Success(None)
 
+    # @debugFunc
     def visit_Compound(self, node):
         last_expr = None
+        ar = ActivationRecord(
+                'Coumpound',
+                ARType.BLOKL_FRAME,
+                self.call_stack.peek().unwrap())
+        self.call_stack.push(ar)
         for n in map(self.visit, node.children):
             match n:
                 case Success(RetExpr(expr)) as ret:
+                    self.call_stack.pop()
                     return ret
                 case Success(OtherExpr(expr)):
                     last_expr = expr
@@ -71,26 +98,48 @@ class Evaluater(NodeVisitor):
                     continue
                 case Failure(_) as failure:
                     return failure
+        self.call_stack.pop()
         return Success(OtherExpr(last_expr))
 
     def visit_Assign(self, node):
-        match self.visit(node.rvalue):
-            case Success(x):
-                return self.call_stack.peek()\
-                    .map(lambda f : f.set(node.lvalue.name, x))\
-                    .map(lambda _: None)
-            case failure:
-                return failure
+        return Result.do(
+            frame.set(node.lvalue.name, value)
+            for frame in self.visit_VariableFrame(node.lvalue)
+            for value in self.visit(node.rvalue)
+        )
 
+        # match self.visit(node.rvalue):
+            # case Success([frame, x]):
+                # return self.visit(node.rvale)\
+                    # .map(lambda val : frame.set())
+                # frame.set(node.rvalue.name, x)
+                # return Success(())
+            # case failure:
+                # return failure
+
+    # @debugFunc
     def visit_PrintStat(self, node):
         return self.visit(node.expr)\
             .map(print)
 
     def visit_Ret(self, node):
         return self.visit(node.expr).map(RetExpr)
+        # match debugFunc(self.visit)(node.expr):
+            # case Success(RetExpr(expr)) as ret:
+                # return ret
+            # case Success(OtherExpr(expr)) as ret:
+                # return ret
+            # case Success(expr) as ret:
+                # return Success(RetExpr(expr))
+            # case Failure(_) as failure:
+                # return failure
+        # return expr.map(RetExpr)
 
-    def visit_VarDeclaration(self, _):
-        return Success(None)
+    def visit_VarDeclaration(self, node):
+        return Result.do(
+            node
+            for _ in self.call_stack.peek().map(lambda f : f.set(node.name, None))
+        )
 
     def visit_Type(self, _):
         return Success(None)
@@ -141,13 +190,57 @@ class Evaluater(NodeVisitor):
                 return other
 
     def visit_Conditional(self, node):
-        # cond = self.visit(node.cond).unwrap()
-        # if cond:
-            # return self.visit(node.true_term)
-        # else:
-            # return self.visit(node.false_term)
+        cond = self.visit(node.cond).unwrap()
+        if cond:
+            return self.visit(node.true_term)
+        else:
+            return self.visit(node.false_term)
+
+    # @debugFunc
+    def visit_Deref(self, node):
+        return self.visit_DerefMem(node)\
+                .map(lambda x : x.get_value())
+
+    def visit_DerefMem(self, node):
+        return self.call_stack.peek().bind(lambda f : f.getlval(node.name)).map(lambda x : x[node.name])
+
+    def visit_NewAlloc(self, node):
         return Result.do(
-            expr
-            for cond in self.visit(node.cond)
-            for expr in (self.visit(node.true_term) if cond else self.visit(node.false_term))
+            frame.set(node.ownptr.name, HeapUnit(node.ownptr))
+            for frame in self.call_stack.peek()
         )
+
+    def visit_FullType(self, node):
+        return Success(None)
+
+    def visit_OwnPtrDecl(self, node):
+        return Success(None)
+
+    # @debugFunc
+    def visit_Mutation(self, node):
+        return Result.do(
+            deref.mutate(expr)
+            for deref in self.visit_DerefMem(node.deref)
+            for expr  in self.visit(node.expr)
+        )
+
+    def visit_Move(self, node):
+        return Result.do(
+            None
+            for _ in self.visit_NewAlloc(NewAlloc(node.ownptr))
+            for frame in self.call_stack.peek()
+            for expr  in frame.getrval(node.ownvar).map(lambda x : x.get_value())
+            for _ in frame.set(node.ownptr.name, HeapUnit(node.ownptr, expr))\
+                        .getlval(node.ownvar)\
+                        .map(lambda f : f[node.ownvar].release())
+        )
+
+    def visit_RefDecl(self, node):
+        return Result.do(
+            this_frame.set(node.decl_deref.name, heapunit)
+            for this_frame in self.call_stack.peek()
+            for heapunit   in this_frame.getrval(node.deref.name)
+        )
+
+    def visit_Free(self, node):
+        return Success(None)

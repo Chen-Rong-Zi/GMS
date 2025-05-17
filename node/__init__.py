@@ -1,1 +1,2 @@
-from .symbol import Symbol, VarSymbol, ScopedSymbolTable
+from .symbol import Symbol, VarSymbol
+from .symboltable import ScopedSymbolTable

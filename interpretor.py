@@ -14,11 +14,12 @@ from returns.result   import safe,         Success, Failure, Result
 from returns.maybe    import Nothing,      Some
 from returns.pipeline import is_successful, pipe
 from returns.pointfree  import bind, map_
+from returns.iterables  import Fold
 
 from objprint         import objprint as pprint
 
 from scan  import FileScanner, StrScanner, Scanner
-from visit import Evaluater,   SemanticAnalyzer, ClosureFlow,  LispVisitor, RPNVisitor, NodeVisitor, PrettyPrinter
+from visit import Evaluater,   SemanticAnalyzer, OwnerShipChecker, ClosureFlow,  LispVisitor, RPNVisitor, NodeVisitor, PrettyPrinter
 from parse import Parser, ExprParser
 import util
 from util  import debugFunc
@@ -44,6 +45,9 @@ class GMS:
     def parse(self, parser_type=Parser):
         return self.scanner.scan().bind(lambda tokens : parser_type(tokens).parse())
 
+    def parse_list(self, parser_type=Parser):
+        return self.scanner.scan().bind(lambda tokens : parser_type(tokens).parse_list())
+
     def parse_and_visit(self, parser_type, visitor):
         return self.scanner.scan()\
             .bind(lambda tokens : parser_type(tokens).parse())\
@@ -64,7 +68,7 @@ class InteractGMS(GMS):
                 # gms.bind(GMS.evaluate).map(print)
                 # gms.bind(Lisp_evaluate).map(print)
                 # gms.bind(RPNVisitor().visit).map(print)
-                first    = gms.bind(lambda g : g.parse(Parser))
+                first    = gms.bind(lambda g : g.parse_list(Parser))
                 first.bind(PrettyPrinter().visit).map(print)
                 second = first.bind(checker.visit)
                 third = second.bind(interpretor.visit)
@@ -109,9 +113,9 @@ if __name__ == '__main__':
     if args.prettyprint:
         gms.bind(lambda g : g.prettyprint()).map(print).alt(print)
     elif args.check:
-        gms.bind(lambda g : g.check()).bind(lambda g : g.prettyprint()).map(print).alt(print)
+        gms.bind(lambda g : g.check()).bind(lambda g : g.prettyprint()).alt(print).map(print)
     elif is_successful(gms):
-        checker = SemanticAnalyzer()
+        checker = OwnerShipChecker()
         gms.bind(lambda g: g.parse_and_visit(Parser, checker)).bind(ClosureFlow(checker).visit).alt(print)
         # gms.bind(lambda g : g.parse()).bind(ClosureFlow(Evaluater(), SemanticAnalyzer()).visit).alt(print)
     else:

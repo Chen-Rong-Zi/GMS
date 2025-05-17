@@ -2,7 +2,7 @@ from .nodevisitor import NodeVisitor
 from .nodevisitor import *
 from error        import ErrorCode, SemanticError
 
-from node.symbol import FuncSymbol
+from node.symbol import *
 from util        import log
 
 class SemanticAnalyzer(NodeVisitor):
@@ -10,7 +10,7 @@ class SemanticAnalyzer(NodeVisitor):
         self.curr_scope = ScopedSymbolTable.get_global()
 
     def error(self, error_code, token):
-        return Failure(SemanticError(error_code=error_code, token=token, message=f'{error_code.value} -> {token}'))
+        return Failure(SemanticError(error_code=error_code, token=token, message=f'{error_code}: {token}'))
 
     def visit_Num(self, node):
         return Success(node)
@@ -42,14 +42,18 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_Compound(self, node):
         # return Fold.collect(map(self.visit, node.children), Success(()))
         # log(self.curr_scope)
-        return Result.do(
+        new_scope = ScopedSymbolTable('Compound', self.curr_scope.level + 1, self.curr_scope)
+        self.curr_scope = new_scope
+        ret = Result.do(
             Compound(list(children))
             for children in Fold.collect(map(self.visit, node.children), Success(()))
         )
+        self.curr_scope = self.curr_scope.enclosing_scope
+        return ret
 
     def visit_Assign(self, node):
         return Result.do(
-            Assign(node.lvalue, node.op, node.rvalue)
+            node
             for _ in self.visit(node.lvalue)
             for _ in self.visit(node.rvalue)
         )
@@ -72,10 +76,6 @@ class SemanticAnalyzer(NodeVisitor):
             for _ in self.curr_scope.define(VarSymbol(node.name, t))
         )
 
-        # return self.curr_scope.lookup(node._type.name)\
-            # .bind(lambda x : self.curr_scope.define(VarSymbol(node.name, x)))\
-            # .map(lambda _ : node)
-
     def visit_Type(self, node):
         return self.curr_scope.lookup(node.name).map(lambda _ : node)
 
@@ -86,12 +86,13 @@ class SemanticAnalyzer(NodeVisitor):
         )
 
     def visit_FuncDeclaration(self, node):
-        self.curr_scope.define(FuncSymbol(node.func_name, node.paramlist, node.compound))
+        defination = self.curr_scope.define(FuncSymbol(node.func_name, node.paramlist, node.compound))
         new_scope = ScopedSymbolTable(node.name, self.curr_scope.level + 1, self.curr_scope)
         self.curr_scope = new_scope
         ret = Result.do(
             node
             # for _ in self.visit(node.name)
+            for _ in defination
             for _ in Fold.collect(map(self.visit, node.paramlist), Success(()))
             for _ in self.visit(node.compound)
         )
@@ -103,7 +104,7 @@ class SemanticAnalyzer(NodeVisitor):
     def visit_FuncCall(self, node):
         symbol = self.curr_scope.lookup(node.name)
         if not is_successful(symbol):
-            return self.error(ErrorCode.ID_NOT_FOUND, node.token)
+            return symbol
 
         node.func_symbol = symbol.unwrap()
         return Result.do(
@@ -125,3 +126,27 @@ class SemanticAnalyzer(NodeVisitor):
             for true_term  in self.visit(node.true_term)
             for false_term in self.visit(node.false_term)
         )
+
+    def visit_NewAlloc(self, node):
+        return Success(node)
+
+    def visit_FullType(self, node):
+        return Success(node)
+
+    def visit_OwnPtrDecl(self, node):
+        return Success(node)
+
+    def visit_Deref(self, node):
+        return Success(node)
+
+    def visit_Mutation(self, node):
+        return Success(node)
+
+    def visit_Move(self, node):
+        return Success(node)
+
+    def visit_RefDecl(self, node):
+        return Success(node)
+
+    def visit_Free(self, node):
+        return Success(node)

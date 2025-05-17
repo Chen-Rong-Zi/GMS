@@ -3,6 +3,7 @@
 this is a template file
 """
 from returns.maybe import  Nothing
+from node.symbol import GMSKeyword, BuiltinTypeSymbol
 
 class AST:
     def __init__(self, token):
@@ -64,6 +65,9 @@ class Compound(AST):
     def __str__(self):
         return 'Compound({children})'.format(children='{' + '\n'.join(str(c) for c in self.children) + '}')
 
+    def __iter__(self):
+        return iter(self.children)
+
 class Assign(AST):
     def __init__(self, lvalue, op, rvalue):
         self.lvalue = lvalue
@@ -94,12 +98,12 @@ class VarDeclaration(AST):
         self.name  = self.token.string
 
     def __str__(self):
-        return f'VarDecalration({self._type}, {self.token})'
+        return f'VarDeclaration({self._type}, {self.token})'
 
 class Type(AST):
-    def __init__(self, _type):
-        self._type = _type
-        self.name  = self._type.string
+    def __init__(self, token):
+        self.token = token
+        self.name  = self.token.string
 
     def __str__(self):
         return f'Type(self._type)'
@@ -153,3 +157,75 @@ class Conditional(AST):
 
     def __str__(self):
         return f'Conditional({self.cond}, {self.true_term}, {self.false_term})'
+
+class NewAlloc(AST):
+    def __init__(self, ownptr):
+        self.ownptr = ownptr
+
+    def __str__(self):
+        return f'NewAlloc({self.ownptr})'
+
+class FullType(AST):
+    def __init__(self, _type, base_type, level=0, kind=GMSKeyword.OWN):
+        self.token = _type
+        self.name  = _type.string
+        self.level = level
+        self.kind = kind
+        self.base_type = base_type
+
+    def __str__(self):
+        return f'Type(self._type)'
+
+class OwnPtrDecl:
+
+    def __init__(self, full_type, name):
+        self.token = name
+        self.name = name.string
+        self.full_type = full_type
+
+    def __str__(self):
+        return f'OwnPtrDecl({self.full_type}, {self.name}, {self.token})'
+
+class Deref(AST):
+    def __init__(self, token, level):
+        self.name = token.string
+        self.token = token
+        self.level = level
+
+    def __str__(self):
+        return f'Deref({self.name}, {self.token}, {self.level})'
+
+class Mutation(AST):
+    def __init__(self, deref, expr):
+        self.deref = deref
+        self.expr  = expr
+
+    def __str__(self):
+        return f'Mutation({self.deref}, {self.expr})'
+
+class Move(AST):
+    def __init__(self, ownptr, ownvar):
+        self.ownptr = ownptr
+        self.token = ownvar
+        self.ownvar = ownvar.string
+
+    def __str__(self):
+        return f'Move({self.ownptr}, {self.ownvar})'
+
+class RefDecl(AST):
+    def __init__(self, _type: BuiltinTypeSymbol, decl_deref, ref_type, deref):
+        self._type  = _type
+        self.ref_type         = ref_type
+        self.decl_deref       = decl_deref
+        self.deref            = deref
+
+    def __str__(self):
+        return f'RefDecl({self._type}, {self.decl_deref}, {self.ref_type.string}, {self.deref})'
+
+class Free(AST):
+    def __init__(self, token):
+        self.name = token.string
+        self.token = token
+
+    def __str__(self):
+        return f'Free({self.name})'

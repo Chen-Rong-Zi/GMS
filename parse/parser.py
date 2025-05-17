@@ -2,17 +2,17 @@ from token import GREATER
 import tokenize
 from tokenize       import TokenInfo
 from tokenize       import NUMBER,  STRING, OP,  NEWLINE, ENDMARKER, PLUS,     MINUS,    STAR,  SLASH,     TokenInfo
-from tokenize       import LBRACE,   RBRACE,  LPAR,    RPAR
+from tokenize       import LBRACE,   RBRACE,  LPAR,    RPAR, AMPER
 from tokenize       import NAME,     EQUAL,   SEMI,    COMMA, LESSEQUAL, GREATEREQUAL, LESS, GREATER, EQEQUAL
 
 from returns.result     import safe,     Success, Failure, Result
 from returns.iterables  import Fold
 from returns.pipeline   import is_successful
 
-from node.ast       import BinOp,    Num, Str, Bool, UnaryOp, Assign,    Variable, Compound, Empty, PrintStat, VarDeclaration, Type
-from node.ast       import FuncParam, FuncDeclaration, FuncCall, Ret, GlobalAst, Conditional
+from node.ast       import BinOp,    Num, Str, Bool, UnaryOp, Assign,    Variable, Compound, Empty, PrintStat, VarDeclaration, Type, RefDecl, Free
+from node.ast       import FuncParam, FuncDeclaration, FuncCall, Ret, GlobalAst, Conditional, NewAlloc, FullType, Deref, Mutation, OwnPtrDecl, Move
 from node.symbol    import BuiltinType, GMSKeyword, FuncSymbol
-from util           import debugFunc
+from util           import debugFunc, check_same
 from error          import ParserError, ErrorCode
 
 class Parser:
@@ -22,7 +22,7 @@ class Parser:
     EOF        = [NEWLINE, ENDMARKER, 4]
     ExtentedOP = [LPAR,    RPAR,      OP,    PLUS, MINUS, STAR, SLASH]
     BuiltinTypes = [BuiltinType.NUM, BuiltinType.BOOL, BuiltinType.STR]
-    Keyword = [GMSKeyword.ELSE, GMSKeyword.IF, GMSKeyword.PRINT, GMSKeyword.FUNC, GMSKeyword.RET] + GMSKeyword.TYPES
+    Keyword = [GMSKeyword.FREE, GMSKeyword.NEW, GMSKeyword.SHARE, GMSKeyword.UNIQ, GMSKeyword.OWN, GMSKeyword.ELSE, GMSKeyword.IF, GMSKeyword.PRINT, GMSKeyword.FUNC, GMSKeyword.RET] + GMSKeyword.TYPES
 
     @staticmethod
     def token_to_literal(token_type):
@@ -36,10 +36,12 @@ class Parser:
         self.in_func_block = 0
         """
         assignment: ID = expr SEMI
+        mutate: DEREF = expr SEMI
         compound statement: LBRACE statement list RBRACE
-        print statement: PRINT expr
-        declaration statement: TYPE ID (COMMA ID)* SEMI
-                               | FUNC ID paramlist  RETARR compound_statement
+        print statement: PRINT expr SEMI
+        variable declaration statement: TYPE ID (COMMA ID)* SEMI
+        function declaration statement: FUNC ID paramlist  RETARR ID compound_statement
+        own-pointer declaration statement: TYPE name EQUAL new TYPE SEMI
 
         paramlist: LPAR (ID: TYPE)* RPAR
 
@@ -47,6 +49,9 @@ class Parser:
                     | assignment statement 
                     | compound statement
                     | declaration statement
+                    | own pointer declaration
+                    | borrow pointer declaration
+                    | free statement:
                     | print statement
                     | return statement
 
@@ -64,6 +69,13 @@ class Parser:
             | - factor
             | int
             | lpaten expr rparen
+            | DEREF
+        TYPE: BASETYPE own (STAR)*
+            | BASETYPE uniq (STAR)*
+            | BASETYPE share (STAR)*
+            | BASETYPE
+        DEREF: (STAR)+ ID
+        BASETYPE: Num | Str | 
         ID: NAME
         LPAR: '('
         RPAR: ')'
@@ -74,16 +86,19 @@ class Parser:
         self.read_term1 = self.rule(self.read_term0,   [PLUS, MINUS])
         self.read_term2 = self.rule(self.read_term1,   [LESS, LESSEQUAL, GREATER, GREATEREQUAL, EQEQUAL])
         self.read_name = lambda : self.read_specific([NAME])
-        self.read_type = lambda : self.read_keyword(Parser.BuiltinTypes).map(Type)
+        self.read_base_type = lambda : self.read_keyword(Parser.BuiltinTypes).map(Type)
 
     def error(self, error_code, token, origin):
-        return Failure(ParserError(error_code=error_code, token=token, message=f'{error_code.value} -> {token}, expect {origin}'))
+        return Failure(ParserError(error_code=error_code,
+                                   token=token,
+                                   message=f'{error_code} -> {token.string, Parser.token_to_literal(token.type)} at line: {token[2][0]}, expect {origin}'))
 
-#  @debugFunc
+    # @debugFunc
     def advance(self):
         self.curr_token = next(self.tokens)
         return self.curr_token
 
+    # @debugFunc
     def read_expr(self):
         term = self.read_term2()
         if self.curr_token.string == 'if':
@@ -125,6 +140,15 @@ class Parser:
                 #          .bind(Failure)
                 return self.error(ErrorCode.UNEXPECTED_TOKEN, tk, f'{[Parser.token_to_literal(type) for type in types]}')
 
+    def read_deref(self):
+        level = 0
+        while self.curr_token.exact_type == STAR:
+            level += 1
+            self.advance()
+        if level == 0:
+            return self.error(ErrorCode.UNEXPECTED_TOKEN, self.curr_token, '*')
+        return self.read_name().map(lambda tk : Deref(tk, level))
+
 #  @debugFunc
     def read_factor(self):
         match self.curr_token:
@@ -135,7 +159,6 @@ class Parser:
                 self.advance()
                 return Success(Str(tk))
             case TokenInfo(string='True' | 'False') as tk:
-                print(tk.string)
                 self.advance()
                 return Success(Bool(tk))
             case TokenInfo(string='('):
@@ -148,6 +171,8 @@ class Parser:
             case TokenInfo(string=('+' | '-')) as tk:
                 self.advance()
                 return self.read_factor().map(lambda expr : UnaryOp(tk, expr))
+            case TokenInfo(string='*') as tk:
+                return self.read_deref()
             case var if var.exact_type == NAME:
                 if var.string in Parser.Keyword:
                     return self.error(ErrorCode.UNEXPECTED_TOKEN, var, 'NAME')
@@ -182,7 +207,7 @@ class Parser:
         return Result.do(
             PrintStat(expr)
             for expr in self.read_expr()
-            for semi in self.read_specific([SEMI])
+            for _ in self.read_specific([SEMI])
         )
 
     # @debugFunc
@@ -197,7 +222,7 @@ class Parser:
 
     def read_compound(self):
         return Result.do(
-            statement_list
+            Compound(statement_list)
             for _  in self.read_specific([LBRACE])
             for statement_list in self.read_statement_list()
             for _ in self.read_specific([RBRACE])
@@ -211,6 +236,39 @@ class Parser:
             for _ in self.read_specific([SEMI])
         )
 
+    # @debugFunc
+    def read_mutation(self):
+        return Result.do(
+            Mutation(deref, expr)
+            for deref in self.read_deref()
+            for _ in self.read_specific([EQUAL])
+            for expr in self.read_expr()
+            for _  in self.read_specific([SEMI])
+        )
+
+    def read_reference_declaration(self, type_token):
+        return Result.do(
+            RefDecl(Type(type_token), decl_deref, keyword, deref)
+            for keyword in self.read_keyword([GMSKeyword.UNIQ, GMSKeyword.SHARE])
+            for decl_deref in self.read_deref()
+            for _ in self.read_specific([EQUAL])
+            for _ in self.read_specific([AMPER])
+            for _ in self.read_keyword([keyword.string])
+            for deref in self.read_factor()
+            for _ in self.read_specific([SEMI])
+        )
+
+    def read_free(self):
+        return Result.do(
+            Free(name)
+            for _ in self.read_keyword([GMSKeyword.FREE])
+            for _ in self.read_specific([LPAR])
+            for name in self.read_name()
+            for _ in self.read_specific([RPAR])
+            for _ in self.read_specific([SEMI])
+        )
+
+    # @debugFunc
     def read_statement(self):
         match self.curr_token:
             case TokenInfo(string=GMSKeyword.RET):
@@ -221,8 +279,19 @@ class Parser:
                 return self.read_print_statement()
             case TokenInfo(string=GMSKeyword.FUNC):
                 return self.read_funcdeclaration()
+            case TokenInfo(string=GMSKeyword.FREE):
+                return self.read_free()
             case op if op.string in Parser.BuiltinTypes:
-                return self.read_vardeclara()
+                self.advance()
+                match self.curr_token:
+                    case TokenInfo(string=GMSKeyword.OWN):
+                        return self.read_own_declaration(op)
+                    case TokenInfo(string=GMSKeyword.UNIQ |  GMSKeyword.SHARE):
+                        return self.read_reference_declaration(op)
+                    case _:
+                        return self.read_vardeclara(op)
+            case TokenInfo(string='*'):
+                return self.read_mutation()
             case op if op.exact_type == NAME:
                 return self.read_assign()
             case TokenInfo(string='{'):
@@ -236,7 +305,7 @@ class Parser:
         while True:
             match self.read_statement():
                 case Success(Empty() as e):
-                    return Success(Compound(statement_list + [e]))
+                    return Success(statement_list + [e])
                 case Success([*declares]):
                     statement_list.extend([*declares])
                 case Success(statement):
@@ -244,14 +313,54 @@ class Parser:
                 case failure:
                     return failure
 
+    def read_own_pointer(self, type_token):
+        return Result.do(
+            OwnPtrDecl(ftype, name)
+            for ftype in self.read_full_type(type_token)
+            for name in self.read_name()
+        )
+
+
+    def read_own_declaration(self, type_token):
+        ownptrdecl = self.read_own_pointer(type_token)
+        equal = self.read_specific([EQUAL])
+        if not is_successful(equal):
+           return equal
+        if self.curr_token.string == GMSKeyword.NEW:
+            return Result.do(
+                NewAlloc(ownptr)
+                for ownptr in ownptrdecl
+                for _    in self.read_keyword([GMSKeyword.NEW])
+                for t    in self.read_base_type()
+                for _    in check_same(type_token.string, t.token.string).lash(lambda _ : self.error(ErrorCode.UnmatchedType, type_token, [t.token]))
+                for _    in self.read_specific([SEMI])
+            )
+        else:
+            return Result.do(
+                Move(own_pointer, deref)
+                for own_pointer  in ownptrdecl
+                for deref in self.read_name()
+                for _    in self.read_specific([SEMI])
+            )
+
+    def read_full_type(self, base_type_token):
+        match self.curr_token:
+            case TokenInfo(string=GMSKeyword.OWN):
+                self.advance()
+                level = 0
+                while self.curr_token.exact_type == STAR:
+                    level += 1
+                    self.advance()
+                return Success(FullType(base_type_token, Type(base_type_token), level, GMSKeyword.OWN))
+            case _:
+                return self.error(ErrorCode.SYNTAXERROR, self.curr_token, [GMSKeyword.OWN])
 
 #  @debugFunc
-    def read_vardeclara(self):
-        _type = self.read_type()
+    def read_vardeclara(self, type_token):
+        _type = Type(type_token)
 
         names = Result.do(
-            [VarDeclaration(t, n)]
-            for t in _type
+            [VarDeclaration(_type, n)]
             for n in self.read_name()
         )
         if not is_successful(names):
@@ -263,10 +372,9 @@ class Parser:
                 case TokenInfo(string=','):
                     self.advance()
                     names = Result.do(
-                        prev_names + [VarDeclaration(t, next_name)]
+                        prev_names + [VarDeclaration(_type, next_name)]
                         for next_name in self.read_name()
                         for prev_names in names
-                        for t in _type
                     )
                 case semi  if semi.exact_type  == SEMI:
                     self.advance()
@@ -289,7 +397,7 @@ class Parser:
     def read_param(self):
         return Result.do(
             FuncParam(_type, Variable(name))
-            for _type in self.read_type()
+            for _type in self.read_base_type()
             for name  in self.read_name()
         )
 
@@ -346,7 +454,15 @@ class Parser:
             .bind(lambda result : Success(result)
                     if self.curr_token.exact_type in Parser.EOF
                     else self.error(ErrorCode.UNEXPECTED_TOKEN, self.curr_token, 'EOF'))\
+            .map(Compound)\
             .map(GlobalAst)
+
+    def parse_list(self):
+        return self.read_statement_list()\
+            .bind(lambda result : Success(result)
+                    if self.curr_token.exact_type in Parser.EOF
+                    else self.error(ErrorCode.UNEXPECTED_TOKEN, self.curr_token, 'EOF'))
+
 
 class ExprParser(Parser):
     def parse(self):

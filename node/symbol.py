@@ -3,8 +3,10 @@
 from functools   import reduce
 from enum        import Enum
 from collections import OrderedDict
+from dataclasses import dataclass
+
 from returns.result     import safe,   Success, Failure, Result
-from util        import debugFunc
+from util        import debugFunc, error
 from error       import ErrorCode, SemanticError
 
 class BuiltinType:
@@ -16,9 +18,14 @@ class GMSKeyword:
     TYPES = [BuiltinType.NUM, BuiltinType.STR, BuiltinType.BOOL]
     PRINT = 'print'
     FUNC  = 'func'
-    IF  = 'if'
+    FREE  = 'free'
+    OWN   = 'own'
+    NEW   = 'new'
+    UNIQ  = 'uniq'
+    SHARE = 'shr'
+    IF    = 'if'
     ELSE  = 'else'
-    RET  = 'return'
+    RET   = 'return'
 
 class Symbol:
     def __init__(self, name, type=None):
@@ -63,59 +70,107 @@ class FuncSymbol(Symbol):
 
     __repr__ = __str__
 
-class ScopedSymbolTable:
-    GLOBAL = None
+class RustEnum(type):
+    def __getattr__(cls, name):
+        match name:
+            case 'ShrBrowered':
+                return OwnerState._ShrBrowered(1)
+            case other:
+                error(f'{other} not in OwnerState')
+                assert False
 
-    @staticmethod
-    def get_global():
-        if ScopedSymbolTable.GLOBAL is None:
-            GLOBAL = ScopedSymbolTable('GLOBAL', 0, True)
-            GLOBAL.enclosing_scope = None
-            GLOBAL._init_builtins()
-            ScopedSymbolTable.GLOBAL = GLOBAL
-        return ScopedSymbolTable.GLOBAL
+class OwnerState(metaclass=RustEnum):
+    Owned    = 'Owned'
+    UniqBrowered = 'UniqBrowered'
+    Moved    = 'Moved'
+    Freed    = 'Freed'
 
-    def __init__(self, scope_name, scope_level, enclosing_scope=None):
-        self._symbols = OrderedDict()
-        self.name = scope_name
-        self.level = scope_level
-        self.enclosing_scope = enclosing_scope if enclosing_scope else ScopedSymbolTable.get_global()
+    class _ShrBrowered:
+        def __init__(self, refcnt):
+            self.refcnt = refcnt
 
-    def _init_builtins(self):
-        self.define(BuiltinTypeSymbol('Num'))
-        self.define(BuiltinTypeSymbol('Str'))
-        self.define(BuiltinTypeSymbol('Bool'))
+        def getcnt(self):
+            return self.refcnt
 
-    def error(self, error_code, token):
-        return Failure(SemanticError(error_code, token, message=f'{error_code.value} -> {token}'))
+        def incr(self):
+            self.refcnt += 1
+
+        def decr(self):
+            self.refcnt -= 1
+            assert self.refcnt >= 0
+
+
+
+class OwnPtrSymbol(Symbol):
+
+    def __init__(self, name, state, token):
+        self.name = name
+        self.state = state
+        self.token = token
+
+    def set_state(self, state):
+        self.state = state
+
+    def move(self):
+        if self.state != OwnerState.Owned:
+            return Failure(f'{self.name} is {self.state} imposible to move')
+        self.set_state(OwnerState.Freed)
+        return Success(None)
+
+    def mutate(self):
+        if self.state == OwnerState.Moved:
+            return Failure(None)
+        return Success(None)
+
+    def borrow(self, borrow_type):
+        if self.state != OwnerState.Owned and not isinstance(self.state, OwnerState._ShrBrowered):
+            return Failure(f'{self.name} is in {self.state} imposible to borrow')
+
+        if borrow_type == 'uniq':
+            if self.state == OwnerState.UniqBrowered:
+                return Failure(f'{self.name} already have a uniq borrow')
+            else:
+                self.set_state(OwnerState.UniqBrowered)
+        elif borrow_type == 'shr':
+            if self.state == OwnerState.Owned:
+                self.set_state(OwnerState.ShrBrowered)
+            elif isinstance(self.state, OwnerState._ShrBrowered):
+                self.state.incr()
+        else:
+            print(borrow_type)
+            assert False
+        return Success(None)
 
     # @debugFunc
-    def define(self, symbol):
-        if symbol.name in self._symbols:
-            return self.error(ErrorCode.DUPLICATE_ID, symbol.name)
-        self._symbols[symbol.name] = symbol
-        return Success(self)
-
-    def lookup(self, name):
-        if name in self._symbols:
-            return Success(self._symbols[name])
-        if self.enclosing_scope is None:
-            return self.error(ErrorCode.ID_NOT_FOUND, name)
-        return self.enclosing_scope.lookup(name)
+    def free(self):
+        if self.state != OwnerState.Owned:
+            return Failure(f'{self.name} is in {self.state}')
+        self.set_state(OwnerState.Freed)
+        print(self)
+        return Success(None)
 
     def __str__(self):
-        h1 = 'SCOPE (SCOPED SYMBOL TABLE)'
-        lines = ['\n', h1, '=' * len(h1)]
-        lines.extend('%-15s: %s' % (name, value)
-                     for name, value in (('Scope name', self.name), ('Scope level', self.level),))
+        return '<{clsname}({name}, {state})>'\
+            .format(clsname='OwnPtrSymbol',
+                     name=self.name,
+                     state=self.state)
 
-        h2 = 'Scope (Scoped symbol table) contents'
-        lines.extend([h2, '-' * len(h2)])
-        lines.extend(
-            ('%7s: %r' % (key, value))
-            for key, value in self._symbols.items()
-        )
-        lines.append('\n')
-        return '\n'.join(lines)
+class Reference(Symbol):
 
-    __repr__ = __str__
+    def __init__(self, name, kind, owner):
+        self.name = name
+        self.kind = kind
+        self.owner = owner
+
+    def __str__(self):
+        return f'<Reference({self.name}, {self.kind.string}, {str(self.owner)})>'
+
+    def return_ownership(self):
+        if self.owner.state == OwnerState.UniqBrowered:
+            self.owner.set_state(OwnerState.Owned)
+        elif isinstance(self.owner.state, OwnerState._ShrBrowered):
+            self.owner.state.decr()
+            if self.owner.state.getcnt() == 0:
+                self.owner.set_state(OwnerState.Owned)
+        else:
+            assert False, f'{self.owner.state = }'

@@ -16,9 +16,11 @@ class ClosureFlow(Evaluater):
         self.checker = checker
 
     def visit_FuncDeclaration(self, node):
+        self.checker.visit(node)
         funcsym = self.checker.curr_scope.lookup(node.name).unwrap()
         funcsym.astnode = node
         node.parent_frame = self.call_stack.peek().unwrap()
+        return Success(None)
 
     def visit_FuncCall(self, node):
         funcsym = self.checker.curr_scope.lookup(node.name).unwrap()

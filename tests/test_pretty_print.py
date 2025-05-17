@@ -10,9 +10,7 @@ def test_simple():
     print(res)
     assert res.unwrap() ==\
 """\
-{
-    a = 1;
-    b = 2;
-    c = 3;
-}
+a = 1;
+b = 2;
+c = 3;
 """

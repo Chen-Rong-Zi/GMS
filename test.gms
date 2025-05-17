@@ -1,34 +1,32 @@
-func add1(Num a) { Num b;}
-print add1(2);
+Num own *p = new Num;
+*p = 1234;
+free(p);
 
-func big(Num a) {
-    {
-        return 1;
-    }
-    return 2;
-}
-print big(1);
+Num own *q = p;
+Num own *m = new Num;
+*m = *q + 1234;
 
-func fact(Num a) {
-    return (1) if (a <= 1) else (a * fact(a - 1));
-}
-
-func fib(Num n) {
-    return 1 if n <= 1 else (fib(n - 1) + fib(n - 2));
+{
+    Num own *abc = m;
+    *abc = 1111;
+    free(abc);
 }
 
-Num a;
-a = 4321;
-func ouuter() {
-    return a;
-}
+Num own *owner = new Num;
+*owner = 111;
+{
+    Num shr *uniq_borrow = &shr *owner;
+    Num shr *shr_borrow1 = &shr *owner;
+    Num shr *shr_borrow2 = &shr *owner;
+    Num shr *shr_borrow3 = &shr *owner;
+    Num shr *shr_borrow4 = &shr *owner;
+    Num shr *shr_borrow5 = &shr *shr_borrow4;
 
-func test_free_variable() {
-    Num a;
-    a = 1234;
-    return ouuter();
+    print shr_borrow1;
+    print shr_borrow2;
+    print shr_borrow3;
+    print shr_borrow4;
+    print shr_borrow5;
+    print uniq_borrow;
 }
-
-print fact(10);
-print (ouuter());
-print (test_free_variable());
+print *owner;
