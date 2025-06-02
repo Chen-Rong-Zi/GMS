@@ -7,7 +7,7 @@ from typing    import Never
 
 from returns.result import Success
 from .gen_expr import gen_expr
-from interpretor import GMS
+from interpretor import Container, providers
 from scan        import StrScanner
 from visit       import SemanticAnalyzer, ClosureFlow
 from parse       import Parser
@@ -34,7 +34,8 @@ def test_check_depth() -> Never:
 
     print outer();
     """
-    gms = Success(GMS(StrScanner(code)))
+    Container.scanner.override(providers.Object(StrScanner(code)))
+    gms = Container.gms()
 
     iobuffer = io.StringIO()
     # 保存原始的 sys.stdout
@@ -43,7 +44,7 @@ def test_check_depth() -> Never:
     checker = SemanticAnalyzer()
     print(checker.curr_scope._symbols)
     # gms.parse_and_visit(Parser, ClosureFlow(checker)).unwrap()
-    gms.bind(lambda g: g.parse_and_visit(Parser, checker)).bind(ClosureFlow(checker).visit).alt(print)
+    gms.execute().alt(print)
     output = iobuffer.getvalue()
     print(output, file=oldstdout)
 
@@ -65,13 +66,14 @@ def test_recursion():
     print fact(4);
     """
     checker = SemanticAnalyzer()
-    gms = Success(GMS(StrScanner(code)))
+    Container.scanner.override(providers.Object(StrScanner(code)))
+    gms = Container.gms()
 
     iobuffer = io.StringIO()
     # 保存原始的 sys.stdout
     oldstdout = sys.stdout
     sys.stdout = iobuffer
-    gms.bind(lambda g: g.parse_and_visit(Parser, checker)).bind(ClosureFlow(checker).visit).alt(print)
+    gms.execute().alt(print)
     output = iobuffer.getvalue()
     print(output, file=oldstdout)
 

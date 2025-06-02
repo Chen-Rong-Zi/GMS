@@ -4,9 +4,9 @@ this is a template file
 """
 
 from scan.scanner import StrScanner
-from .gen_expr import gen_expr
-from interpretor import GMS
-from objprint    import objprint as print
+from .gen_expr    import gen_expr
+from interpretor  import Container, providers
+from objprint     import objprint as print
 import io
 import sys
 
@@ -43,7 +43,11 @@ def test_basic():
 
         # 保存原始的 sys.stdout
         sys.stdout = output_buffer
-        GMS(StrScanner(code)).interpret().unwrap()
+
+        Container.scanner.override(providers.Object(StrScanner(code)))
+        gms = Container.gms()
+        gms.execute().unwrap()
+
         output = output_buffer.getvalue()
 
         assert '\n'.join(str(i) for i in answer) + '\n' == output

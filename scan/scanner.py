@@ -2,6 +2,9 @@
 """
 this is a template file
 """
+import sys
+
+from abc               import ABC, abstractmethod
 
 from returns.result    import safe
 from returns.pipeline  import flow
@@ -11,8 +14,9 @@ from tokenize          import TokenError
 from io                import BytesIO
 
 
-class Scanner:
+class Scanner(ABC):
     remove_extra = lambda x : filter(lambda x : x.exact_type not in [INDENT, NL, NEWLINE, DEDENT], x)
+    @abstractmethod
     @safe
     def scan(self):
         raise Exception('unimplemented scan method')
@@ -31,7 +35,7 @@ class StrScanner(Scanner):
         )
 
 class FileScanner(Scanner):
-    def __init__(self, filepath):
+    def __init__(self, filepath: str):
         self.filepath = filepath
         self.file = None
 
@@ -43,3 +47,16 @@ class FileScanner(Scanner):
     def __del__(self):
         if self.file:
             self.file.close()
+
+class PipeLineScanner(StrScanner):
+    def __init__(self):
+        self.buffer = sys.stdin.read()
+
+    @safe
+    def scan(self, encoding='utf-8'):
+        return flow(
+            self.buffer.encode(encoding),
+            lambda bytes : BytesIO(bytes).readline,
+            tokenize,
+            Scanner.remove_extra
+        )

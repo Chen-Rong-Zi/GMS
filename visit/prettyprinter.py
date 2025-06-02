@@ -134,7 +134,7 @@ class PrettyPrinter(Evaluater):
     def visit_Mutation(self, node):
         string = PrettyPrinter.Indent * self.level
         return Result.do(
-            string + deref + ' = ' + expr
+            string + deref + ' = ' + expr + ';\n'
             for deref in self.visit(node.deref)
             for expr  in self.visit(node.expr)
         )
@@ -148,7 +148,7 @@ class PrettyPrinter(Evaluater):
     def visit_RefDecl(self, node):
         string = PrettyPrinter.Indent * self.level
         return Result.do(
-            string + t + ' ' + node.ref_type.string + ' ' + decl + ' = &' + rvalue + ';'
+            string + t + ' ' + node.ref_type.string + ' ' + decl + ' = &' + rvalue + ';\n'
             for t      in self.visit(node._type)
             for decl   in self.visit(node.decl_deref)
             for rvalue in self.visit(node.deref)
@@ -156,10 +156,7 @@ class PrettyPrinter(Evaluater):
 
     def visit_Free(self, node):
         string = PrettyPrinter.Indent * self.level
-        return Result.do(
-            string + f'free({name})'
-            for name in self.visit(node.variable)
-        )
+        return Success(string + f'free ({node.name})')
 
     def visit_tuple(self, node):
         return super().visit_tuple(node)\

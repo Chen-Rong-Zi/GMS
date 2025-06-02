@@ -4,9 +4,10 @@ this is a template file
 """
 
 
-from .gen_expr import gen_expr
+import io, sys
 
-from interpretor import GMS
+from .gen_expr import gen_expr
+from interpretor import Container, providers
 from scan        import StrScanner
 
 def make_test(expr_type):
@@ -14,7 +15,19 @@ def make_test(expr_type):
         for _ in range(100):
             try:
                 expression = gen_expr(expr_type)
-                assert eval(expression) == GMS(StrScanner(expression)).evaluate().value_or(None)
+                code = f'print {expression};'
+                print(f'{expression = }', f'{code = }')
+
+                iobuffer = io.StringIO()
+                # 保存原始的 sys.stdout
+                oldstdout = sys.stdout
+                sys.stdout = iobuffer
+                Container.scanner.override(providers.Object(StrScanner(code)))
+                gms = Container.gms()
+                gms.execute()
+                output = iobuffer.getvalue()
+
+                assert eval(expression) == eval(output.strip())
                 # print(f'\rpass {count} tests', end='')
             except ZeroDivisionError:
                 pass

@@ -5,7 +5,7 @@ this is a template file
 
 
 from returns.result import Success
-from interpretor    import GMS,       Evaluater, SemanticAnalyzer
+from interpretor    import Evaluater, SemanticAnalyzer
 from scan           import StrScanner
 from node           import VarSymbol
 

@@ -4,7 +4,7 @@
 from .gen_expr import gen_expr
 from typing    import Never
 
-from interpretor import GMS
+from interpretor import Container, providers
 from scan        import StrScanner
 from visit       import SemanticAnalyzer
 from parse       import Parser
@@ -18,7 +18,8 @@ def test_check_assign() -> Never:
         print a + b + c;
     }}
     """
-    gms = GMS(StrScanner(code))
+    Container.scanner.override(providers.Object(StrScanner(code)))
+    gms = Container.checkonly()
 
     actual_table = {
         'a':  '<a:Num>',
@@ -28,7 +29,7 @@ def test_check_assign() -> Never:
 
     checker = SemanticAnalyzer()
     print(checker.curr_scope._symbols)
-    gms.parse_and_visit(Parser, checker).value_or(None)
+    gms.execute().value_or(None)
     for key, value in checker.curr_scope._symbols.items():
         if key not in actual_table:
             continue
@@ -41,11 +42,12 @@ def test_check_double_declaration():
         Str a;
         Bool a;
     """
-    gms = GMS(StrScanner(code))
+    Container.scanner.override(providers.Object(StrScanner(code)))
+    gms = Container.checkonly()
 
     checker = SemanticAnalyzer()
     print(checker.curr_scope._symbols)
-    res = gms.parse_and_visit(Parser,checker)
+    res = gms.execute()
     assert 'Duplicate id found' in str(res.failure())
 
 def test_check_scope_simple():
@@ -56,9 +58,11 @@ def test_check_scope_simple():
         for file in files:
             with open(path[0] + '/' + file) as f:
                 code = f.read()
-            gms = GMS(StrScanner(code))
+
+            Container.scanner.override(providers.Object(StrScanner(code)))
+            gms = Container.checkonly()
 
             checker = SemanticAnalyzer()
             print(checker.curr_scope._symbols)
-            gms.parse_and_visit(Parser, checker).unwrap()
+            gms.execute().unwrap()
 
